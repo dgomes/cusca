@@ -7,7 +7,6 @@ from collections import deque
 
 import av
 from PIL import Image, ImageDraw, ImageFont
-
 from flask import Flask, render_template, Response
 
 FPS=2 #frames per second in the MJPEG stream
@@ -25,11 +24,11 @@ class Camera(object):
         self.rtsp_url = url
         try:
             from edgetpu.detection.engine import DetectionEngine
-
             # Initialize engine.
             self.engine = DetectionEngine("mobilenet_ssd_v2_coco_quant_postprocess_edgetpu.tflite")
-        except:
-            logger.error("edgetpu libs not installed")
+            logger.info("%s", self.engine.required_input_array_size())
+        except Exception as err:
+            logger.error(err)
 
     def get_frame(self):
         fnt = ImageFont.truetype('opensans.ttf', 20)
@@ -42,14 +41,21 @@ class Camera(object):
                         fps = (fps+1)%PF
                         if fps == 0:
                             img = frame.to_image()
-                            if self.engine:
-                                ans = engine.DetectWithImage(img, threshold=0.05, keep_aspect_ratio=True, relative_coord=False, top_k=10)
-                                for obj in ans:
-                                    box = obj.bounding_box.flatten().tolist()
-                                    logger.debug("%s, %s, %s", box, obj.label_id, obj.score)
-                                    draw = ImageDraw.Draw(img)
-                                    draw.rectangle(box, outline='red')
-                                    draw.text((box[0], box[1]-24), obj.label_id, font=fnt, fill="red")
+                            draw = ImageDraw.Draw(img)
+                           
+                            specials = [(1300, 100, 200), (1400, 600, 400)]
+                            for r in specials:
+                                reg = (r[0], r[1], r[0] + r[2], r[1] + r[2])
+                                draw.rectangle(reg, outline='green')
+                                crop_img = img.crop(reg)
+                            
+                                if self.engine:
+                                    ans = self.engine.DetectWithImage(crop_img, threshold=0.05, keep_aspect_ratio=True, relative_coord=False, top_k=10)
+                                    for obj in ans:
+                                        box = obj.bounding_box.flatten().tolist()
+                                        logger.debug("%s, %s, %s", box, obj.label_id, obj.score)
+                                        draw.rectangle(box, outline='red')
+                                        draw.text((int(box[0]), int(box[1])-24), str(obj.label_id), font=fnt, fill="red")
 
                             qcam.append(img)
 
