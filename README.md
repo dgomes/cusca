@@ -1,4 +1,4 @@
-CUSCA - *CU*rrent event *S*treaming *C*amer*A*
+# CUSCA - *CU*rrent event *S*treaming *C*amer*A*
 
 This webapp generates an MJPEG Stream from an RTSP stream based by filtering frames with meaningful events (currently persons detected in the frame)
 
