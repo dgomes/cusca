@@ -1,8 +1,4 @@
-av==6.2.0
-Click==7.0
-Flask==1.1.1
-itsdangerous==1.1.0
-Jinja2==2.10.1
-MarkupSafe==1.1.1
-Pillow==6.2.0
-Werkzeug==0.15.5
+av==8.0.2
+Flask==1.1.2
+Pillow==7.2.0
+https://dl.google.com/coral/python/tflite_runtime-2.1.0.post1-cp37-cp37m-macosx_10_14_x86_64.whl
