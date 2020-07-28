@@ -7,7 +7,6 @@ from collections import deque
 from itertools import cycle
 
 import av
-from PIL import Image, ImageDraw, ImageFont
 from flask import Flask, render_template, Response
 
 import detect_image
