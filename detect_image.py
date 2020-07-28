@@ -91,5 +91,5 @@ class Engine():
         return None
 
 if __name__ == '__main__':
-    e = Engine()
+    e = Engine("models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite", "models/coco_labels.txt")
     e.detect_image(image_file="19-49-38.jpg")
