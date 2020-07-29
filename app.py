@@ -35,11 +35,13 @@ logger = logging.getLogger(__name__)
 
 
 class Camera(object):
-    def __init__(self, url):
+    def __init__(self, url, callback = None):
         self.engine = detect_image.Engine(MODEL_FILE, LABELS_FILE )
         self.rtsp_url = url
+        self.callback = callback
         self._initstate = True
         self._event = False
+        self.event_detected = False
 
         self.configuration = {
             CONF_ARMED: True,
@@ -48,9 +50,12 @@ class Camera(object):
             CONF_THRESHOLD: detect_image.TF_THRESHOLD,
         }
 
-        self.current_event = deque(maxlen=BUFFER_SIZE)
-        self.last_events = deque(maxlen=BUFFER_SIZE)
-        self.cycle = deque(maxlen=BUFFER_SIZE)
+        self.set_buffer()
+
+    def set_buffer(self, buffer_size = BUFFER_SIZE):
+        self.current_event = deque(maxlen=buffer_size)
+        self.last_events = deque(maxlen=buffer_size)
+        self.cycle = deque(maxlen=buffer_size)
 
     @property
     def event_detected(self):
@@ -58,12 +63,14 @@ class Camera(object):
 
     @event_detected.setter
     def event_detected(self, val):
+        if self.callback and val != self._event:
+            self.callback("event_detected", val)
         self._event = val
 
     def capture_frames(self):
         container = av.open(self.rtsp_url)
         container.streams.video[0].thread_type = 'AUTO'
-        fps = 0
+        fc = 0
 
         for frame in container.decode(video=0):
             #populate initial image
@@ -72,23 +79,25 @@ class Camera(object):
                 self.current_event.append(img)
                 self._initstate = False
 
-            fps = (fps+1)%(1/PF)
-            if fps == 0:
+            fc = (fc+1)%(1/PF)
+            if fc == 0:
                 img = frame.to_image()
                 d_img = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
                 if d_img:
+                    self.event_detected = True
                     self.current_event.append(d_img)
+                else:
+                    self.event_detected = False
 
     def get_frame(self):
         if len(self.current_event):
-            if not self.event_detected:
-                self.event_detected = True
             frame = self.current_event.popleft()
-            self.last_events.append(frame)
-        else:
-            if self.event_detected:
-                self.event_detected = False
+            self.last_events.append(frame) #this is a buffer for cycle
+
+            #last frame ? lets cycle our old events
+            if len(self.current_event) == 0:
                 self.cycle = self.last_events.copy()
+        else:
             frame = self.cycle.popleft()
             self.cycle.append(frame)
         return frame
@@ -111,7 +120,10 @@ def gen():
         frame.save(imgByteArr, format='JPEG')
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + imgByteArr.getvalue() + b'\r\n')
-            
+
+def publish_property(client, property, value):
+    client.publish(f"{MQTT_BASE_TOPIC}/{property}",value)
+
 def on_connect(client, properties, flags, result):
     client.publish(MQTT_BASE_TOPIC+"/status","online",retain=True)
     for conf in camera.configuration:
@@ -153,6 +165,7 @@ if __name__ == '__main__':
     mqttc.will_set(MQTT_BASE_TOPIC+"/status", "offline",retain=True)
     mqttc.on_connect = on_connect
     mqttc.on_message = on_message
+    camera.callback = lambda p, v: publish_property(mqttc, p, v)
 
     mqttc.connect(MQTT_SERVER)
     mqttc.loop_start()
