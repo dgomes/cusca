@@ -66,14 +66,14 @@ class Engine():
                 '%s\n%.2f' % (self._labels.get(obj.id, obj.id), obj.score),
                 fill='red')
  
-    def detect_image(self, image=None, image_file=None):
+    def detect_image(self, image=None, image_file=None, threshold=TF_THRESHOLD):
         if image_file:
             image = Image.open(image_file)
         scale = detect.set_input(self.interpreter, image.size,
                                 lambda size: image.resize(size, Image.ANTIALIAS))
 
         self.interpreter.invoke()
-        objs = detect.get_output(self.interpreter, TF_THRESHOLD, scale) 
+        objs = detect.get_output(self.interpreter, threshold, scale) 
         interesting_objs = [o for o in objs if o.id in self._interesting_objs]
 
         logger.debug(f"{len(objs)} objects detected - {len(interesting_objs)} of interest")
