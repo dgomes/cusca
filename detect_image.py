@@ -86,9 +86,9 @@ class Engine():
             best_obj = max(interesting_objs, key=lambda x: x.score)
             self.draw_object(ImageDraw.Draw(image), best_obj)
             logger.info(f"{self._labels.get(best_obj.id, best_obj.id)} detected with probabiliy {best_obj.score} at {best_obj.bbox}")
-            return image
+            return image, best_obj
         
-        return None
+        return None, None
 
 if __name__ == '__main__':
     e = Engine("models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite", "models/coco_labels.txt")
