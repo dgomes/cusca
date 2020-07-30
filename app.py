@@ -96,12 +96,13 @@ class Camera(object):
             if self.configuration[CONF_ARMED]:
                 d_img, prob = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
             else:
-                d_img = img
+                d_img, prob = img, 0
     
             if d_img:
                 self.event_detected = True
                 self.current_event.append(d_img)
-                self.callback("event_probability", prob)
+                if prob > 0:
+                    self.callback("event_probability", prob)
             else:
                 self.event_detected = False
 
