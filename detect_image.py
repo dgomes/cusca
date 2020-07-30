@@ -96,7 +96,7 @@ class Engine():
             logger.info(f"{self._labels.get(best_obj.id, best_obj.id)} detected with probabiliy {best_obj.score} at {best_obj.bbox}")
             return image, best_obj.score
         
-        return None, None
+        return None, 0
 
 if __name__ == '__main__':
     e = Engine("models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite", "models/coco_labels.txt")
