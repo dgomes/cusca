@@ -8,6 +8,10 @@ from queue import Queue
 from collections import deque
 from itertools import cycle
 
+#import cProfile
+#pr = cProfile.Profile()
+#pr.enable()
+
 from PIL import Image
 import paho.mqtt.client as mqtt
 from flask import Flask, render_template, Response, send_file
@@ -75,7 +79,7 @@ class Camera(object):
     def capture_frames(self):
         # This thread captures frames exclusively
         container = av.open(self.rtsp_url)
-        container.streams.video[0].thread_type = 'AUTO'
+        #container.streams.video[0].thread_type = 'AUTO'
         w, h = container.streams.video[0].width, container.streams.video[0].height
         fc = 0
 
@@ -205,11 +209,20 @@ if __name__ == '__main__':
     
     camera.callback = lambda p, v: publish_property(mqttc, p, v)
     
-    c = threading.Thread(target=camera.capture_frames)
-    p = threading.Thread(target=camera.process_frames)
-    c.start()
-    p.start()
-    app.run(host='0.0.0.0', debug=False)
-    c.join()
-    p.join()
-    mqttc.loop_stop()
+    try:
+        c = threading.Thread(target=camera.capture_frames)
+        p = threading.Thread(target=camera.process_frames)
+        c.start()
+        p.start()
+        app.run(host='0.0.0.0', debug=False)
+        c.join()
+        p.join()
+        mqttc.loop_stop()
+    except KeyboardInterrupt:
+        pass
+        #pr.disable()
+        #pr.create_stats()
+        #pr.dump_stats("bootstrap.cprof")
+
+
+
