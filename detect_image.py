@@ -24,19 +24,22 @@ class Engine():
 
     def __init__(self, model_file, labels, threshold=TF_THRESHOLD):
         self._labels = self.load_labels(labels) if labels else {}
-
+        self.interpreter = None
         self._interesting_objs = [0] # 0 is person TODO filter from labels
 
-        # Load interpreter
-        model_file, *device = model_file.split('@')
-        self.interpreter = tflite.Interpreter(
-            model_path=model_file,
-            experimental_delegates=[
-                tflite.load_delegate(EDGETPU_SHARED_LIB,
-                                    {'device': device[0]} if device else {})
-            ])
+        try:
+            # Load interpreter
+            model_file, *device = model_file.split('@')
+            self.interpreter = tflite.Interpreter(
+                model_path=model_file,
+                experimental_delegates=[
+                    tflite.load_delegate(EDGETPU_SHARED_LIB,
+                                        {'device': device[0]} if device else {})
+                ])
 
-        self.interpreter.allocate_tensors()
+            self.interpreter.allocate_tensors()
+        except ValueError:
+            logger.error("You need to have a Google Coral device attached and the supporting libraries installed")
 
     def load_labels(self, path, encoding='utf-8'):
         """Loads labels from file (with or without index numbers).
@@ -69,6 +72,11 @@ class Engine():
     def detect_image(self, image=None, image_file=None, threshold=TF_THRESHOLD):
         if image_file:
             image = Image.open(image_file)
+
+        if not self.interpreter:
+            logger.warning("Interpreter has not been loaded, returning plain image")
+            return image, 1.0
+
         scale = detect.set_input(self.interpreter, image.size,
                                 lambda size: image.resize(size, Image.ANTIALIAS))
 
