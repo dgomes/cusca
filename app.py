@@ -3,6 +3,7 @@ import io
 import logging
 import threading
 import time
+from queue import Queue
 from collections import deque
 from itertools import cycle
 
@@ -55,6 +56,7 @@ class Camera(object):
         self.set_buffer()
 
     def set_buffer(self, buffer_size = BUFFER_SIZE):
+        self.frames = Queue(maxsize=buffer_size)
         self.current_event = deque(maxlen=buffer_size)
         self.last_events = deque(maxlen=buffer_size)
         self.cycle = deque(maxlen=buffer_size)
@@ -70,6 +72,7 @@ class Camera(object):
         self._event = val
 
     def capture_frames(self):
+        # This thread captures frames exclusively
         container = av.open(self.rtsp_url)
         container.streams.video[0].thread_type = 'AUTO'
         w, h = container.streams.video[0].width, container.streams.video[0].height
@@ -82,20 +85,26 @@ class Camera(object):
         for frame in container.decode(video=0):
             fc = (fc+1)%(1/PF)
             if fc == 0:
-                img = frame.to_image()
-                d_img, _ = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
-                if d_img:
-                    self.event_detected = True
-                    self.current_event.append(d_img)
-                else:
-                    self.event_detected = False
+                self.frames.put(frame)
 
-                if not self.event_detected and len(self.current_event) or \
-                    len(self.current_event) == self.current_event.maxlen: 
-                    
-                    self.last_events.extend(self.current_event)
-                    self.cycle = self.last_events.copy() #copy which we rotate
-                    self.current_event.clear()
+    def process_frames(self):
+        # This thread processes frames and can handle other tasks
+        while True:
+            frame = self.frames.get()
+            img = frame.to_image()
+            d_img, _ = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
+            if d_img:
+                self.event_detected = True
+                self.current_event.append(d_img)
+            else:
+                self.event_detected = False
+
+            if not self.event_detected and len(self.current_event) or \
+                len(self.current_event) == self.current_event.maxlen: 
+                
+                self.last_events.extend(self.current_event)
+                self.cycle = self.last_events.copy() #copy which we rotate
+                self.current_event.clear()
 
     def get_frame(self):
         frame = self.cycle[0]
@@ -180,17 +189,20 @@ def on_message(client, userdata, message):
             logger.error(f"Could not set threshold to {message.payload}")
 
 if __name__ == '__main__':
-    mqttc = mqtt.Client(client_id="cusca", userdata=camera.configuration)
+    mqttc = mqtt.Client(client_id=MQTT_BASE_TOPIC, userdata=camera.configuration)
     mqttc.will_set(MQTT_BASE_TOPIC+"/status", "offline",retain=True)
     mqttc.on_connect = on_connect
     mqttc.on_message = on_message
-    camera.callback = lambda p, v: publish_property(mqttc, p, v)
-
     mqttc.connect(MQTT_SERVER)
     mqttc.loop_start()
     
+    camera.callback = lambda p, v: publish_property(mqttc, p, v)
+    
     c = threading.Thread(target=camera.capture_frames)
+    p = threading.Thread(target=camera.process_frames)
     c.start()
+    p.start()
     app.run(host='0.0.0.0', debug=False)
     c.join()
+    p.join()
     mqttc.loop_stop()
