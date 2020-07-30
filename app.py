@@ -6,15 +6,16 @@ import time
 from collections import deque
 from itertools import cycle
 
+from PIL import Image
 import paho.mqtt.client as mqtt
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, send_file
 
 import av
 logging.getLogger('libav').setLevel(logging.ERROR) #disable warnings from FFMPEG when processing rtsp streams
 
 import detect_image
 
-FPS=1 #frames per second in the MJPEG stream
+FPS=4 #frames per second in the MJPEG stream
 PF=0.5 #percentage of frames processed from the rtsp stream 
 
 CAMERA_URL = os.getenv('CAMERA', 'rtsp://admin@192.168.1.96:554/user=admin_password=_channel=0_stream=0.sdp')
@@ -28,6 +29,7 @@ CONF_ARMED = 'armed'
 CONF_MJPEG_FPS = 'mjpeg_fps'
 CONF_PF = 'percentage_processed_frames'
 CONF_THRESHOLD = 'threshold'
+CONF_EVENT_BUFFER = 'buffer'
 
 DBG_LEVEL = os.getenv('LOGGING_LEVEL', 'INFO').upper()
 logging.basicConfig(level=DBG_LEVEL, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -39,7 +41,6 @@ class Camera(object):
         self.engine = detect_image.Engine(MODEL_FILE, LABELS_FILE )
         self.rtsp_url = url
         self.callback = callback
-        self._initstate = True
         self._event = False
         self.event_detected = False
 
@@ -48,6 +49,7 @@ class Camera(object):
             CONF_MJPEG_FPS: FPS,
             CONF_PF: PF, 
             CONF_THRESHOLD: detect_image.TF_THRESHOLD,
+            CONF_EVENT_BUFFER: BUFFER_SIZE,
         }
 
         self.set_buffer()
@@ -70,39 +72,40 @@ class Camera(object):
     def capture_frames(self):
         container = av.open(self.rtsp_url)
         container.streams.video[0].thread_type = 'AUTO'
+        w, h = container.streams.video[0].width, container.streams.video[0].height
         fc = 0
 
-        for frame in container.decode(video=0):
-            #populate initial image
-            if self._initstate:
-                img = frame.to_image()
-                self.current_event.append(img)
-                self._initstate = False
+        #Init with blank screen
+        self.last_events.append(Image.new('RGB', (w, h)))
+        self.cycle = self.last_events.copy()
 
+        for frame in container.decode(video=0):
             fc = (fc+1)%(1/PF)
             if fc == 0:
                 img = frame.to_image()
-                d_img = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
+                d_img, _ = self.engine.detect_image(img, threshold=self.configuration[CONF_THRESHOLD])
                 if d_img:
                     self.event_detected = True
                     self.current_event.append(d_img)
                 else:
                     self.event_detected = False
 
-    def get_frame(self):
-        if len(self.current_event):
-            frame = self.current_event.popleft()
-            self.last_events.append(frame) #this is a buffer for cycle
+                if not self.event_detected and len(self.current_event) or \
+                    len(self.current_event) == self.current_event.maxlen: 
+                    
+                    self.last_events.extend(self.current_event)
+                    self.cycle = self.last_events.copy() #copy which we rotate
+                    self.current_event.clear()
 
-            #last frame ? lets cycle our old events
-            if len(self.current_event) == 0:
-                self.cycle = self.last_events.copy()
-        else:
-            frame = self.cycle.popleft()
-            self.cycle.append(frame)
+    def get_frame(self):
+        frame = self.cycle[0]
+        self.cycle.rotate(-1)
         return frame
     
-
+    def last_frame(self):
+        frame = self.last_events[-1]
+        return frame
+    
 app = Flask(__name__)
 
 camera = Camera(CAMERA_URL)  
@@ -110,6 +113,15 @@ camera = Camera(CAMERA_URL)
 @app.route('/')
 def index():
     return Response(gen(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/image')
+def image():
+    frame = camera.last_frame()
+    imgByteArr = io.BytesIO()
+    frame.save(imgByteArr, 'JPEG')
+    imgByteArr.seek(0)
+
+    return send_file(imgByteArr, mimetype='image/jpeg')
 
 def gen():
     """Generate MJPEG frames."""
@@ -132,6 +144,13 @@ def on_connect(client, properties, flags, result):
 
 def on_message(client, userdata, message):
     logger.debug("on_message %s = %s", message.topic, str(message.payload))
+
+    if CONF_EVENT_BUFFER is message.topic:
+        if str(message.payload.decode()).isnumeric():
+            camera.set_buffer(int(str(message.payload.decode())))
+        else:
+            logger.error(f"Could not set buffer size to {message.payload}")
+
     if CONF_ARMED in message.topic: 
         if "true" in str(message.payload).lower():
             userdata[CONF_ARMED] = True
