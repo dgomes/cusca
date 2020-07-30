@@ -3,6 +3,7 @@ import io
 import logging
 import threading
 import time
+import random
 from queue import Queue
 from collections import deque
 from itertools import cycle
@@ -189,7 +190,7 @@ def on_message(client, userdata, message):
             logger.error(f"Could not set threshold to {message.payload}")
 
 if __name__ == '__main__':
-    mqttc = mqtt.Client(client_id=MQTT_BASE_TOPIC, userdata=camera.configuration)
+    mqttc = mqtt.Client(client_id=f"cusca_{random.randint(10, 99)}", userdata=camera.configuration)
     mqttc.will_set(MQTT_BASE_TOPIC+"/status", "offline",retain=True)
     mqttc.on_connect = on_connect
     mqttc.on_message = on_message
