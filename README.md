@@ -33,8 +33,12 @@ Furthermore, some variables can be adjusted in realtime through MQTT such as:
 
 | Topic | Information | Default |
 | ------------- | ------------- | ------------- | 
-| cusca/armed | currently unused | True | 
+| cusca/armed | If True frames are processed else cusca acts like a proxy | True | 
 | cusca/mjpeg_fps | frames per second in the mjpeg stream | 4 | 
 | cusca/percentage_processed_frames | % or frames from the original rtsp - default 50% | 0.5 | 
 | cusca/threshold | consider an event if probability higher then (0 to 1) | 0.14 |
 | cusca/buffer | Number of frames kept by the MJPEG stream|  24 |
+| cusca/status | (Read-only) Indication that CUSCA daemon is running or not | offline |
+| cusca/event_detected | (Read-only) Boolean indication if we are in the middle on an event | True |
+| cusca/event_probability | (Read-only) Probability of event detection in the last frame that passed the threshold | - |
+
