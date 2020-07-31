@@ -4,13 +4,11 @@ import logging
 import threading
 import time
 import random
-from queue import Queue
+from queue import SimpleQueue
 from collections import deque
 from itertools import cycle
 
-#import cProfile
-#pr = cProfile.Profile()
-#pr.enable()
+
 
 from PIL import Image
 import paho.mqtt.client as mqtt
@@ -46,6 +44,7 @@ class Camera(object):
     def __init__(self, url, callback = None):
         self.engine = detect_image.Engine(MODEL_FILE, LABELS_FILE )
         self.rtsp_url = url
+        self.frames = SimpleQueue()
         self.callback = callback
         self._event = False
         self.event_detected = False
@@ -61,7 +60,6 @@ class Camera(object):
         self.set_buffer()
 
     def set_buffer(self, buffer_size = BUFFER_SIZE):
-        self.frames = Queue(maxsize=buffer_size)
         self.current_event = deque(maxlen=buffer_size)
         self.last_events = deque(maxlen=buffer_size)
         self.cycle = deque(maxlen=buffer_size)
@@ -168,6 +166,7 @@ def on_message(client, userdata, message):
     if CONF_EVENT_BUFFER is message.topic:
         if str(message.payload.decode()).isnumeric():
             camera.set_buffer(int(str(message.payload.decode())))
+            logger.info(f"Setting BUFFERS to {int(str(message.payload.decode()))}")
         else:
             logger.error(f"Could not set buffer size to {message.payload}")
 
@@ -210,19 +209,21 @@ if __name__ == '__main__':
     camera.callback = lambda p, v: publish_property(mqttc, p, v)
     
     try:
-        c = threading.Thread(target=camera.capture_frames)
-        p = threading.Thread(target=camera.process_frames)
+        #import cProfile
+        #pr = cProfile.Profile()
+        #pr.enable()
+        
+        c = threading.Thread(target=camera.capture_frames, daemon=True)
+        p = threading.Thread(target=camera.process_frames, daemon=True)
         c.start()
         p.start()
         app.run(host='0.0.0.0', debug=False)
-        c.join()
-        p.join()
-        mqttc.loop_stop()
     except KeyboardInterrupt:
         pass
         #pr.disable()
         #pr.create_stats()
         #pr.dump_stats("bootstrap.cprof")
-
+    finally:
+        mqttc.loop_stop()
 
 
