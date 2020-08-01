@@ -197,6 +197,15 @@ def on_message(client, userdata, message):
         except ValueError:
             logger.error(f"Could not set threshold to {message.payload}")
 
+def healthy_loop(func):
+    #used to capture exceptions and restarting (e.g. when the rtsp goes offline)
+    while True:
+        try:
+            func()
+        except:
+            logger.error("Error in daemon thread. Restarting in 30sec")
+            time.sleep(30)
+
 if __name__ == '__main__':
     mqttc = mqtt.Client(client_id=f"cusca_{random.randint(10, 99)}", userdata=camera.configuration)
     mqttc.will_set(MQTT_BASE_TOPIC+"/status", "offline",retain=True)
@@ -212,8 +221,8 @@ if __name__ == '__main__':
         #pr = cProfile.Profile()
         #pr.enable()
         
-        c = threading.Thread(target=camera.capture_frames, daemon=True)
-        p = threading.Thread(target=camera.process_frames, daemon=True)
+        c = threading.Thread(target=lambda: healthy_loop(camera.capture_frames), daemon=True)
+        p = threading.Thread(target=lambda: healthy_loop(camera.process_frames), daemon=True)
         c.start()
         p.start()
         app.run(host='0.0.0.0', debug=False)
