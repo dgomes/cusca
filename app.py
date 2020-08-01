@@ -8,9 +8,6 @@ from queue import SimpleQueue
 from collections import deque
 from itertools import cycle
 
-
-
-from PIL import Image
 import paho.mqtt.client as mqtt
 from flask import Flask, render_template, Response, send_file
 
@@ -20,7 +17,7 @@ logging.getLogger('libav').setLevel(logging.ERROR) #disable warnings from FFMPEG
 import detect_image
 
 FPS=4 #frames per second in the MJPEG stream
-PF=0.5 #percentage of frames processed from the rtsp stream 
+PF=0.2 #percentage of frames processed from the rtsp stream 
 
 CAMERA_URL = os.getenv('CAMERA', 'rtsp://admin@192.168.1.96:554/user=admin_password=_channel=0_stream=0.sdp')
 MODEL_FILE = os.getenv('MODEL_FILE', "models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite")
@@ -77,14 +74,16 @@ class Camera(object):
     def capture_frames(self):
         # This thread captures frames exclusively
         container = av.open(self.rtsp_url)
-        #container.streams.video[0].thread_type = 'AUTO'
-        w, h = container.streams.video[0].width, container.streams.video[0].height
-        fc = 0
 
-        #Init with blank screen
-        self.last_events.append(Image.new('RGB', (w, h)))
+        # Experiments to improve CPU performance
+        #container.streams.video[0].thread_type = 'AUTO'
+        #container.streams.video[0].codec_context.skip_frame = 'NONKEY'
+
+        #Init screen
+        self.last_events.append(next(container.decode(video=0)))
         self.cycle = self.last_events.copy()
 
+        fc = 0
         for frame in container.decode(video=0):
             fc = (fc+1)%(1/PF)
             if fc == 0:
