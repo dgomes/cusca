@@ -80,7 +80,7 @@ class Camera(object):
         #container.streams.video[0].codec_context.skip_frame = 'NONKEY'
 
         #Init screen
-        self.last_events.append(next(container.decode(video=0)))
+        self.last_events.append(next(container.decode(video=0)).to_image())
         self.cycle = self.last_events.copy()
 
         fc = 0
