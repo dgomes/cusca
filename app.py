@@ -14,7 +14,8 @@ from flask import Flask, render_template, Response, send_file
 import av
 logging.getLogger('libav').setLevel(logging.ERROR) #disable warnings from FFMPEG when processing rtsp streams
 
-import detect_image
+import engine
+import edgetpu_engine
 
 FPS=4 #frames per second in the MJPEG stream
 PF=0.2 #percentage of frames processed from the rtsp stream 
@@ -24,7 +25,7 @@ MODEL_FILE = os.getenv('MODEL_FILE', "models/ssd_mobilenet_v2_coco_quant_postpro
 LABELS_FILE = os.getenv('LABELS_FILE', "models/coco_labels.txt")
 MQTT_BASE_TOPIC = os.getenv('MQTT_BASE_TOPIC', 'cusca')
 MQTT_SERVER = os.getenv('MQTT_SERVER', '192.168.1.100')
-BUFFER_SIZE = os.getenv('BUFFER_SIZE', 24)
+BUFFER_SIZE = os.getenv('BUFFER_SIZE', 48)
 
 CONF_ARMED = 'armed'
 CONF_MJPEG_FPS = 'mjpeg_fps'
@@ -39,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 class Camera(object):
     def __init__(self, url, callback = None):
-        self.engine = detect_image.Engine(MODEL_FILE, LABELS_FILE )
+        self.engine = edgetpu_engine.EdgeTPUEngine(MODEL_FILE, LABELS_FILE )
+        if not self.engine.interpreter:
+            logger.error("Could not use Google Coral EdgeTPU, falling back to CPU.")
+            import cpu_engine
+            self.engine = cpu_engine.CPUEngine("models/frozen_inference_graph.pb")
         self.rtsp_url = url
         self.frames = SimpleQueue()
         self.callback = callback
@@ -50,7 +55,7 @@ class Camera(object):
             CONF_ARMED: True,
             CONF_MJPEG_FPS: FPS,
             CONF_PF: PF, 
-            CONF_THRESHOLD: detect_image.TF_THRESHOLD,
+            CONF_THRESHOLD: engine.TF_THRESHOLD,
             CONF_EVENT_BUFFER: BUFFER_SIZE,
         }
 
@@ -80,7 +85,7 @@ class Camera(object):
         #container.streams.video[0].codec_context.skip_frame = 'NONKEY'
 
         #Init screen
-        self.last_events.append(next(container.decode(video=0)))
+        self.last_events.append(next(container.decode(video=0)).to_image())
         self.cycle = self.last_events.copy()
 
         fc = 0
@@ -202,7 +207,8 @@ def healthy_loop(func):
     while True:
         try:
             func()
-        except:
+        except Exception as err:
+            logger.error(err)
             logger.error("Error in daemon thread. Restarting in 30sec")
             time.sleep(30)
 
